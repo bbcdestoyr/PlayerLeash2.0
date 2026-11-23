@@ -1,0 +1,34 @@
+name: PlayerLeash
+version: '${project.version}'
+main: com.example.playerleash.PlayerLeashPlugin
+api-version: '1.21'
+description: Leash other players (with consent), hitch them to fences and control them with a remote.
+
+commands:
+  leash:
+    description: Ask a player to be leashed, or accept/decline a request.
+    usage: /leash <player> | /leash accept <player> | /leash decline <player>
+    permission: playerleash.use
+  unleash:
+    description: Release your pet(s), or free yourself if you are leashed.
+    usage: /unleash [player]
+    permission: playerleash.use
+  petremote:
+    description: Get the Pet Controller remote back.
+    usage: /petremote
+    permission: playerleash.use
+  playerleash:
+    description: Admin command.
+    usage: /playerleash reload
+    permission: playerleash.admin
+
+permissions:
+  playerleash.use:
+    description: Use the plugin.
+    default: true
+  playerleash.force:
+    description: Leash players without asking for their consent.
+    default: op
+  playerleash.admin:
+    description: Reload the plugin.
+    default: op

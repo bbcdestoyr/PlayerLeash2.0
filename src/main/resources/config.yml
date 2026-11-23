@@ -1,0 +1,32 @@
+# PlayerLeash settings
+
+# How long a leash request stays open (seconds)
+request-timeout-seconds: 30
+
+# How many pets one master can have at once
+max-pets-per-master: 3
+
+# While leashed, the pet gets gently pulled toward the master (or fence) past this distance (blocks)
+pull-start-distance: 4.0
+
+# While leashed, past this distance the pet is snapped back (blocks).
+# Does NOT apply when the pet is set to walk free or has free will.
+tether-teleport-distance: 25.0
+
+# Fastest the pull can move the pet (blocks per tick)
+max-pull-speed: 0.6
+
+# Height of the rope attach point above the pet's feet (blocks).
+# Tune this so the rope visually ends at the neck.
+anchor-height-offset: 1.1
+
+# Material of the Pet Controller remote item
+remote-item: STICK
+
+# Collar look. Baby pink by default.
+collar-block: PINK_CONCRETE_POWDER
+collar-tag: true
+collar-tag-block: GOLD_BLOCK
+
+# Safeword: a leashed player can always free themselves with /unleash
+allow-pet-self-release: true
