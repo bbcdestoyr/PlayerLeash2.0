@@ -10,7 +10,7 @@ commands:
     usage: /leash <player> | /leash accept <player> | /leash decline <player>
     permission: playerleash.use
   unleash:
-    description: Release your pet(s), or free yourself if you are leashed.
+    description: Disown your pet(s). Pets can only free themselves if the config allows it.
     usage: /unleash [player]
     permission: playerleash.use
   petremote:

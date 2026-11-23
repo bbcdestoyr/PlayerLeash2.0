@@ -86,7 +86,7 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         tetherDistance = getConfig().getDouble("tether-teleport-distance", 25.0);
         maxPullSpeed = getConfig().getDouble("max-pull-speed", 0.6);
         anchorHeight = getConfig().getDouble("anchor-height-offset", 1.1);
-        allowSelfRelease = getConfig().getBoolean("allow-pet-self-release", true);
+        allowSelfRelease = getConfig().getBoolean("pet-can-unleash-self", false);
     }
 
     /** All messages go only to the people involved, never to the whole server. */
@@ -166,11 +166,22 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         Pet asPet = pets.get(player.getUniqueId());
         if (asPet != null) {
             if (!allowSelfRelease) {
-                send(player, "<red>You can't free yourself.");
+                Player owner = Bukkit.getPlayer(asPet.masterId);
+                send(player, "<red>Only " + (owner != null ? owner.getName() : "your owner")
+                        + " can disown you.");
                 return;
             }
             release(asPet, true);
             return;
+        }
+        if (args.length >= 1 && player.hasPermission("playerleash.admin")) {
+            Player t = Bukkit.getPlayerExact(args[0]);
+            Pet ap = t == null ? null : pets.get(t.getUniqueId());
+            if (ap != null) {
+                release(ap, true);
+                send(player, "<gray>Freed " + t.getName() + ".");
+                return;
+            }
         }
         List<Pet> mine = petsOf(player.getUniqueId());
         if (mine.isEmpty()) {
@@ -254,7 +265,9 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         anchorIndex.put(pet.anchor.getUniqueId(), target.getUniqueId());
         giveRemote(master);
         send(master, "<green>" + target.getName() + " is now on your leash. Use the compass (Pet Controller) to command them.");
-        send(target, "<yellow>You're on " + master.getName() + "'s leash. Type <white>/unleash<yellow> any time to free yourself.");
+        send(target, allowSelfRelease
+                ? "<yellow>You're on " + master.getName() + "'s leash. Type <white>/unleash<yellow> any time to free yourself."
+                : "<yellow>You're on " + master.getName() + "'s leash. Only they can disown you.");
     }
 
     private void release(Pet p, boolean notify) {

@@ -20,5 +20,7 @@ max-pull-speed: 0.6
 # Tune this so the rope visually ends at the neck.
 anchor-height-offset: 1.1
 
-# Safeword: a leashed player can always free themselves with /unleash
-allow-pet-self-release: true
+# false = only the owner can free a pet (with Disown in the menu or /unleash).
+# true  = the pet can also free themselves with /unleash.
+# Staff with playerleash.admin can always free anyone with /unleash <player>.
+pet-can-unleash-self: false

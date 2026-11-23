@@ -95,8 +95,8 @@ final class PetMenu implements InventoryHolder {
                     "Click to let them do anything.", "You will still own them."));
         }
 
-        inv.setItem(SLOT_RELEASE, item(Material.BARRIER, "Release", NamedTextColor.DARK_RED,
-                "Frees them and removes the leash."));
+        inv.setItem(SLOT_RELEASE, item(Material.BARRIER, "Disown", NamedTextColor.DARK_RED,
+                "Frees them. They are no longer yours."));
         return menu;
     }
 
