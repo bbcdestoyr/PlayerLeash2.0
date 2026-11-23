@@ -59,8 +59,7 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
 
     private double pullStart, tetherDistance, maxPullSpeed, anchorHeight;
     private int timeoutSeconds, maxPets;
-    private Material remoteMaterial, collarBlock, collarTagBlock;
-    private boolean collarTag, allowSelfRelease;
+    private boolean allowSelfRelease;
 
     // ------------------------------------------------------------------ setup
 
@@ -88,18 +87,6 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         maxPullSpeed = getConfig().getDouble("max-pull-speed", 0.6);
         anchorHeight = getConfig().getDouble("anchor-height-offset", 1.1);
         allowSelfRelease = getConfig().getBoolean("allow-pet-self-release", true);
-        remoteMaterial = material(getConfig().getString("remote-item"), Material.STICK);
-        collarBlock = material(getConfig().getString("collar-block"), Material.PINK_CONCRETE_POWDER);
-        collarTagBlock = material(getConfig().getString("collar-tag-block"), Material.GOLD_BLOCK);
-        collarTag = getConfig().getBoolean("collar-tag", true);
-    }
-
-    private Material material(String name, Material fallback) {
-        Material m = name == null ? null : Material.matchMaterial(name);
-        if (m == null || m.isAir() || !m.isItem()) return fallback;
-        // Collar parts are drawn as blocks, so they must be real blocks
-        if (fallback.isBlock() && !m.isBlock()) return fallback;
-        return m;
     }
 
     /** All messages go only to the people involved, never to the whole server. */
@@ -225,7 +212,7 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
                 new Request(master.getUniqueId(), System.currentTimeMillis() + timeoutSeconds * 1000L));
         send(master, "<gray>Asked <white>" + target.getName() + "<gray> if you can leash them.");
         String n = master.getName();
-        send(target, "<gold>" + n + " wants to put a collar and leash on you. "
+        send(target, "<gold>" + n + " wants to put you on a leash. "
                 + "<click:run_command:'/leash accept " + n + "'><hover:show_text:'Accept'><green>[Accept]</green></hover></click> "
                 + "<click:run_command:'/leash decline " + n + "'><hover:show_text:'Decline'><red>[Decline]</red></hover></click>");
     }
@@ -263,23 +250,17 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
             send(master, "<red>Couldn't attach the leash.");
             return;
         }
-        pet.collar = new Collar(collarBlock, collarTagBlock, collarTag);
         pets.put(target.getUniqueId(), pet);
         anchorIndex.put(pet.anchor.getUniqueId(), target.getUniqueId());
-        pet.collar.update(target);
         giveRemote(master);
-        send(master, "<green>" + target.getName() + " now wears your collar. Use the Pet Controller to command them.");
-        send(target, "<yellow>You're wearing " + master.getName() + "'s collar. Type <white>/unleash<yellow> any time to free yourself.");
+        send(master, "<green>" + target.getName() + " is now on your leash. Use the compass (Pet Controller) to command them.");
+        send(target, "<yellow>You're on " + master.getName() + "'s leash. Type <white>/unleash<yellow> any time to free yourself.");
     }
 
     private void release(Pet p, boolean notify) {
         pets.remove(p.petId);
         p.leashed = false;
         removeAnchor(p);
-        if (p.collar != null) {
-            p.collar.remove();
-            p.collar = null;
-        }
         LeashHitch h = p.hitch;
         p.hitch = null;
         cleanupHitch(h);
@@ -366,7 +347,7 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    /** Free will: the pet can do anything, but is still owned (collar and remote stay). */
+    /** Free will: the pet can do anything, but is still owned (the leash ownership and remote stay). */
     private void setFreeWill(Pet p, boolean on) {
         p.freeWill = on;
         if (on) {
@@ -399,8 +380,6 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
                 release(p, false);
                 continue;
             }
-
-            if (p.collar != null) p.collar.update(pet);
 
             // Walking free: no rope, no pull, no distance limit.
             if (!p.leashed) continue;
@@ -442,7 +421,7 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
 
     private void giveRemote(Player master) {
         for (ItemStack it : master.getInventory().getContents()) if (isRemote(it)) return;
-        ItemStack remote = new ItemStack(remoteMaterial);
+        ItemStack remote = new ItemStack(Material.COMPASS);
         ItemMeta meta = remote.getItemMeta();
         meta.displayName(MM.deserialize("<!italic><light_purple>Pet Controller"));
         meta.lore(List.of(MM.deserialize("<!italic><gray>Right-click to command your pets")));

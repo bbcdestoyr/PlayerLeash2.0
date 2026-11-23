@@ -20,13 +20,5 @@ max-pull-speed: 0.6
 # Tune this so the rope visually ends at the neck.
 anchor-height-offset: 1.1
 
-# Material of the Pet Controller remote item
-remote-item: STICK
-
-# Collar look. Baby pink by default.
-collar-block: PINK_CONCRETE_POWDER
-collar-tag: true
-collar-tag-block: GOLD_BLOCK
-
 # Safeword: a leashed player can always free themselves with /unleash
 allow-pet-self-release: true

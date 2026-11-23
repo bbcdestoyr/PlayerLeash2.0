@@ -96,7 +96,7 @@ final class PetMenu implements InventoryHolder {
         }
 
         inv.setItem(SLOT_RELEASE, item(Material.BARRIER, "Release", NamedTextColor.DARK_RED,
-                "Takes the collar off and frees them."));
+                "Frees them and removes the leash."));
         return menu;
     }
 

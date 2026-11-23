@@ -16,9 +16,6 @@ final class Pet {
     /** Fence knot the pet is tied to, or null when held by the master. */
     LeashHitch hitch;
 
-    /** The pink collar worn by the pet. */
-    Collar collar;
-
     /** True while the rope is attached (false = walking free, no distance limit). */
     boolean leashed = true;
 

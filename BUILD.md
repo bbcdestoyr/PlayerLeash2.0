@@ -17,6 +17,6 @@ The finished plugin is `target/PlayerLeash-1.0.0.jar`. Drop it in your server's
 
 - Right-click a player holding a Lead, or `/leash <player>`. They get clickable Accept / Decline.
 - `playerleash.force` (ops by default) skips the prompt.
-- Right-click with the Pet Controller (a stick) to open the menu.
+- Right-click with the Pet Controller (a compass) to open the menu.
 - `/unleash` frees you if you are the pet. As the owner, it releases your pets.
 - `/playerleash reload` reloads `config.yml`.
