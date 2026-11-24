@@ -237,7 +237,7 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
                 new Request(master.getUniqueId(), System.currentTimeMillis() + timeoutSeconds * 1000L));
         send(master, "<gray>Asked <white>" + target.getName() + "<gray> if you can leash them.");
         String n = master.getName();
-        send(target, "<gold>" + n + " wants to put you on a leash. They will also be able to cage you and dress you up. "
+        send(target, "<gold>" + n + " wants to put you on a leash. "
                 + "<click:run_command:'/leash accept " + n + "'><hover:show_text:'Accept'><green>[Accept]</green></hover></click> "
                 + "<click:run_command:'/leash decline " + n + "'><hover:show_text:'Decline'><red>[Decline]</red></hover></click>");
     }
