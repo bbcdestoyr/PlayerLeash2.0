@@ -24,3 +24,9 @@ anchor-height-offset: 1.1
 # true  = the pet can also free themselves with /unleash.
 # Staff with playerleash.admin can always free anyone with /unleash <player>.
 pet-can-unleash-self: false
+
+# Maid dress. Style for new pets: 1 Classic, 2 Baby pink, 3 Long gown, 4 Candy.
+# The owner can switch style any time by right-clicking the dress button in the menu.
+dress-style: 1
+# true = pets start out wearing the dress. false = the owner turns it on in the menu.
+dress-on-by-default: false

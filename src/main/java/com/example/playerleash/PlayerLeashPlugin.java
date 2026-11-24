@@ -18,6 +18,14 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockPistonExtendEvent;
+import org.bukkit.event.block.BlockPistonRetractEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityUnleashEvent;
 import org.bukkit.event.entity.PlayerLeashEntityEvent;
@@ -60,6 +68,9 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
     private double pullStart, tetherDistance, maxPullSpeed, anchorHeight;
     private int timeoutSeconds, maxPets;
     private boolean allowSelfRelease;
+    private int defaultDressStyle;
+    private boolean dressByDefault;
+    private boolean internalTp; // true while the plugin itself teleports a caged pet
 
     // ------------------------------------------------------------------ setup
 
@@ -87,6 +98,9 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         maxPullSpeed = getConfig().getDouble("max-pull-speed", 0.6);
         anchorHeight = getConfig().getDouble("anchor-height-offset", 1.1);
         allowSelfRelease = getConfig().getBoolean("pet-can-unleash-self", false);
+        int style = getConfig().getInt("dress-style", 1) - 1;
+        defaultDressStyle = Math.max(0, Math.min(style, DressStyles.STYLES.length - 1));
+        dressByDefault = getConfig().getBoolean("dress-on-by-default", false);
     }
 
     /** All messages go only to the people involved, never to the whole server. */
@@ -223,7 +237,7 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
                 new Request(master.getUniqueId(), System.currentTimeMillis() + timeoutSeconds * 1000L));
         send(master, "<gray>Asked <white>" + target.getName() + "<gray> if you can leash them.");
         String n = master.getName();
-        send(target, "<gold>" + n + " wants to put you on a leash. "
+        send(target, "<gold>" + n + " wants to put you on a leash. They will also be able to cage you and dress you up. "
                 + "<click:run_command:'/leash accept " + n + "'><hover:show_text:'Accept'><green>[Accept]</green></hover></click> "
                 + "<click:run_command:'/leash decline " + n + "'><hover:show_text:'Decline'><red>[Decline]</red></hover></click>");
     }
@@ -263,6 +277,8 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         }
         pets.put(target.getUniqueId(), pet);
         anchorIndex.put(pet.anchor.getUniqueId(), target.getUniqueId());
+        pet.dressStyle = defaultDressStyle;
+        if (dressByDefault) pet.dress = new Dress(pet.dressStyle);
         giveRemote(master);
         send(master, "<green>" + target.getName() + " is now on your leash. Use the compass (Pet Controller) to command them.");
         send(target, allowSelfRelease
@@ -274,6 +290,14 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         pets.remove(p.petId);
         p.leashed = false;
         removeAnchor(p);
+        if (p.cage != null) {
+            p.cage.restore();
+            p.cage = null;
+        }
+        if (p.dress != null) {
+            p.dress.remove();
+            p.dress = null;
+        }
         LeashHitch h = p.hitch;
         p.hitch = null;
         cleanupHitch(h);
@@ -366,6 +390,8 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         if (on) {
             p.sitting = false;
             setFree(p, true);
+        } else if (p.cage != null) {
+            p.wasLeashed = true; // the leash comes back when the cage opens
         } else {
             setFree(p, false);
         }
@@ -392,6 +418,16 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
             if (pet == null || master == null) {
                 release(p, false);
                 continue;
+            }
+
+            if (p.dress != null) p.dress.update(pet);
+
+            // Caged: pull them back to the middle if they somehow get outside.
+            if (p.cage != null && !p.cage.inside(pet.getLocation())) {
+                Location c = p.cage.center();
+                c.setYaw(pet.getLocation().getYaw());
+                c.setPitch(pet.getLocation().getPitch());
+                teleportInternal(pet, c);
             }
 
             // Walking free: no rope, no pull, no distance limit.
@@ -601,6 +637,98 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         if (isRemote(e.getItemDrop().getItemStack())) e.setCancelled(true);
     }
 
+    // ------------------------------------------------------------------- cage
+
+    private void teleportInternal(Player pet, Location to) {
+        internalTp = true;
+        try {
+            pet.teleport(to);
+        } finally {
+            internalTp = false;
+        }
+    }
+
+    private void toggleCage(Player master, Player pet, Pet p) {
+        if (p.cage == null) {
+            p.wasLeashed = p.leashed;
+            p.sitting = false;
+            setFree(p, true);
+            p.cage = Cage.build(pet.getLocation());
+            send(master, "<green>" + pet.getName() + " is locked in a cage.");
+            send(pet, "<yellow>You were put in a cage. You can still use commands, but you can't get out.");
+        } else {
+            p.cage.restore();
+            p.cage = null;
+            if (!p.freeWill && p.wasLeashed) setFree(p, false);
+            send(master, "<green>" + pet.getName() + "'s cage is open.");
+            send(pet, "<green>The cage is open.");
+        }
+    }
+
+    private boolean isCageBlock(Block b) {
+        for (Pet p : pets.values()) {
+            if (p.cage != null && p.cage.protects(b)) return true;
+        }
+        return false;
+    }
+
+    private boolean isCaged(Player player) {
+        Pet p = pets.get(player.getUniqueId());
+        return p != null && p.cage != null;
+    }
+
+    @EventHandler
+    public void onTeleport(PlayerTeleportEvent e) {
+        if (internalTp || !isCaged(e.getPlayer())) return;
+        e.setCancelled(true);
+        send(e.getPlayer(), "<red>You can't teleport out of the cage.");
+    }
+
+    @EventHandler
+    public void onBlockBreak(BlockBreakEvent e) {
+        if (isCaged(e.getPlayer()) || isCageBlock(e.getBlock())) e.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onBlockPlace(BlockPlaceEvent e) {
+        if (isCaged(e.getPlayer())) e.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onEntityExplode(EntityExplodeEvent e) {
+        e.blockList().removeIf(this::isCageBlock);
+    }
+
+    @EventHandler
+    public void onBlockExplode(BlockExplodeEvent e) {
+        e.blockList().removeIf(this::isCageBlock);
+    }
+
+    @EventHandler
+    public void onEntityChangeBlock(EntityChangeBlockEvent e) {
+        if (isCageBlock(e.getBlock())) e.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onPistonExtend(BlockPistonExtendEvent e) {
+        for (Block b : e.getBlocks()) {
+            if (isCageBlock(b)) {
+                e.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    @EventHandler
+    public void onPistonRetract(BlockPistonRetractEvent e) {
+        for (Block b : e.getBlocks()) {
+            if (isCageBlock(b)) {
+                e.setCancelled(true);
+                return;
+            }
+        }
+    }
+
     // ------------------------------------------------------------- menu clicks
 
     @EventHandler
@@ -631,10 +759,10 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
             return;
         }
 
-        boolean locked = p.freeWill && (slot == PetMenu.SLOT_WALK || slot == PetMenu.SLOT_SIT
+        boolean locked = (p.freeWill || p.cage != null) && (slot == PetMenu.SLOT_WALK || slot == PetMenu.SLOT_SIT
                 || slot == PetMenu.SLOT_TELEPORT || slot == PetMenu.SLOT_FACE);
         if (locked) {
-            send(master, "<gray>Turn off free will first.");
+            send(master, p.cage != null ? "<gray>Open the cage first." : "<gray>Turn off free will first.");
             return;
         }
 
@@ -660,6 +788,32 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
                 Location l = pet.getLocation();
                 l.setDirection(master.getEyeLocation().toVector().subtract(pet.getEyeLocation().toVector()));
                 pet.teleport(l);
+            }
+            case PetMenu.SLOT_CAGE -> {
+                toggleCage(master, pet, p);
+                openControl(master, p);
+            }
+            case PetMenu.SLOT_DRESS -> {
+                String styleName;
+                if (e.getClick().isRightClick()) {
+                    p.dressStyle = (p.dressStyle + 1) % DressStyles.STYLES.length;
+                    if (p.dress == null) p.dress = new Dress(p.dressStyle);
+                    else p.dress.setStyle(p.dressStyle);
+                    styleName = DressStyles.NAMES[p.dressStyle];
+                    send(master, "<green>" + pet.getName() + " is wearing the " + styleName + " maid dress.");
+                    send(pet, "<yellow>You're wearing a maid dress (" + styleName + ").");
+                } else if (p.dress == null) {
+                    p.dress = new Dress(p.dressStyle);
+                    styleName = DressStyles.NAMES[p.dressStyle];
+                    send(master, "<green>" + pet.getName() + " is wearing the " + styleName + " maid dress.");
+                    send(pet, "<yellow>You're wearing a maid dress (" + styleName + ").");
+                } else {
+                    p.dress.remove();
+                    p.dress = null;
+                    send(master, "<green>" + pet.getName() + "'s dress is off.");
+                    send(pet, "<green>Your dress is off.");
+                }
+                openControl(master, p);
             }
             case PetMenu.SLOT_FREEWILL -> {
                 setFreeWill(p, !p.freeWill);

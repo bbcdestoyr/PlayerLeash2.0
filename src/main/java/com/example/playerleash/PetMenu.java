@@ -25,7 +25,9 @@ final class PetMenu implements InventoryHolder {
     static final int SLOT_SIT = 11;
     static final int SLOT_TELEPORT = 12;
     static final int SLOT_FACE = 13;
+    static final int SLOT_CAGE = 14;
     static final int SLOT_FREEWILL = 15;
+    static final int SLOT_DRESS = 16;
     static final int SLOT_RELEASE = 22;
 
     final Kind kind;
@@ -66,8 +68,8 @@ final class PetMenu implements InventoryHolder {
         menu.inventory = Bukkit.createInventory(menu, 27, Component.text("Pet: " + pet.getName()));
         Inventory inv = menu.inventory;
 
-        if (data.freeWill) {
-            String why = "Locked while free will is on.";
+        if (data.freeWill || data.cage != null) {
+            String why = data.cage != null ? "Locked while caged." : "Locked while free will is on.";
             inv.setItem(SLOT_WALK, item(Material.GRAY_DYE, "Walk free", NamedTextColor.DARK_GRAY, why));
             inv.setItem(SLOT_SIT, item(Material.GRAY_DYE, "Sit / stay", NamedTextColor.DARK_GRAY, why));
             inv.setItem(SLOT_TELEPORT, item(Material.GRAY_DYE, "Teleport to me", NamedTextColor.DARK_GRAY, why));
@@ -93,6 +95,23 @@ final class PetMenu implements InventoryHolder {
         } else {
             inv.setItem(SLOT_FREEWILL, item(Material.NETHER_STAR, "Free will: OFF", NamedTextColor.GRAY,
                     "Click to let them do anything.", "You will still own them."));
+        }
+
+        if (data.cage != null) {
+            inv.setItem(SLOT_CAGE, item(Material.IRON_BARS, "Cage: ON", NamedTextColor.GREEN,
+                    "They are locked in.", "Click to open the cage."));
+        } else {
+            inv.setItem(SLOT_CAGE, item(Material.IRON_BARS, "Cage: OFF", NamedTextColor.GRAY,
+                    "Locks them in a 3x3 cage.", "They can still use commands.",
+                    "They can't break out or teleport out."));
+        }
+        String styleName = DressStyles.NAMES[data.dressStyle];
+        if (data.dress != null) {
+            inv.setItem(SLOT_DRESS, item(Material.PINK_DYE, "Maid dress: ON (" + styleName + ")", NamedTextColor.LIGHT_PURPLE,
+                    "Click to take it off.", "Right-click to change the style."));
+        } else {
+            inv.setItem(SLOT_DRESS, item(Material.PINK_DYE, "Maid dress: OFF", NamedTextColor.GRAY,
+                    "Click to put it on.", "Right-click to change the style.", "Style: " + styleName));
         }
 
         inv.setItem(SLOT_RELEASE, item(Material.BARRIER, "Disown", NamedTextColor.DARK_RED,

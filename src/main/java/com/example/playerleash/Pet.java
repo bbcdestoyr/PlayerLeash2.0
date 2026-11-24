@@ -22,6 +22,18 @@ final class Pet {
     /** True while the pet is told to stay in place. */
     boolean sitting;
 
+    /** The maid dress the pet is wearing, or null when it is off. */
+    Dress dress;
+
+    /** Which dress style the owner picked (index into DressStyles). */
+    int dressStyle;
+
+    /** The cage around the pet, or null when not caged. */
+    Cage cage;
+
+    /** Whether the pet was on the leash before being caged. */
+    boolean wasLeashed;
+
     /** True while the pet may do anything. They are still owned. */
     boolean freeWill;
 
