@@ -28,7 +28,7 @@ pet-can-unleash-self: false
 # Maid dress colour for new pets:
 #   1 Black & white, 2 Baby pink, 3 Lavender, 4 Mint, 5 Sky blue, 6 Navy, 7 Red, 8 Pale lilac
 # The owner can switch colour any time by right-clicking the dress button in the menu.
-dress-style: 1
+dress-style: 8
 # true = pets start out wearing the dress. false = the owner turns it on in the menu.
 dress-on-by-default: false
 
