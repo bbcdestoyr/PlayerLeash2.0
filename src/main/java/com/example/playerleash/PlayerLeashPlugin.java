@@ -3,6 +3,7 @@ package com.example.playerleash;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -10,6 +11,8 @@ import org.bukkit.Tag;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Chicken;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LeashHitch;
@@ -34,6 +37,7 @@ import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerUnleashEntityEvent;
@@ -45,6 +49,8 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -62,6 +68,10 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
 
     private record Request(UUID masterId, long expiresAt) {}
 
+    /** A saved pet whose owner or pet is offline right now. */
+    private record Bond(UUID masterId, UUID petId, String petName, String masterName,
+                        boolean leashed, boolean freeWill, boolean dress, int dressStyle) {}
+
     private NamespacedKey anchorKey;
     private NamespacedKey remoteKey;
 
@@ -71,6 +81,10 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
     private int defaultDressStyle;
     private boolean dressByDefault;
     private boolean internalTp; // true while the plugin itself teleports a caged pet
+    private boolean blockFlying;
+    private int tickCount;
+    private File dataFile;
+    private final Map<UUID, Bond> dormant = new LinkedHashMap<>(); // saved pets, key = pet
 
     // ------------------------------------------------------------------ setup
 
@@ -80,13 +94,15 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         anchorKey = new NamespacedKey(this, "anchor");
         remoteKey = new NamespacedKey(this, "remote");
         loadSettings();
+        loadData();
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getScheduler().runTaskTimer(this, this::tick, 1L, 1L);
+        for (Player online : Bukkit.getOnlinePlayers()) tryActivate(online);
     }
 
     @Override
     public void onDisable() {
-        for (Pet p : new ArrayList<>(pets.values())) release(p, false);
+        for (Pet p : new ArrayList<>(pets.values())) suspend(p);
     }
 
     private void loadSettings() {
@@ -101,6 +117,9 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         int style = getConfig().getInt("dress-style", 1) - 1;
         defaultDressStyle = Math.max(0, Math.min(style, DressStyles.STYLES.length - 1));
         dressByDefault = getConfig().getBoolean("dress-on-by-default", false);
+        blockFlying = getConfig().getBoolean("block-flying-while-leashed", true);
+        Dress.followPassenger = !"teleport".equalsIgnoreCase(getConfig().getString("dress-follow", "passenger"));
+        Dress.heightAdjust = (float) getConfig().getDouble("dress-height-adjust", 0.0);
     }
 
     /** All messages go only to the people involved, never to the whole server. */
@@ -177,42 +196,54 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
     }
 
     private void handleUnleashCommand(Player player, String[] args) {
-        Pet asPet = pets.get(player.getUniqueId());
-        if (asPet != null) {
+        UUID me = player.getUniqueId();
+
+        // The player is a pet (on the leash now, or waiting for their owner to come online)
+        Pet asPet = pets.get(me);
+        Bond waiting = dormant.get(me);
+        if (asPet != null || waiting != null) {
             if (!allowSelfRelease) {
-                Player owner = Bukkit.getPlayer(asPet.masterId);
-                send(player, "<red>Only " + (owner != null ? owner.getName() : "your owner")
-                        + " can disown you.");
+                String owner = asPet != null ? nameOf(asPet.masterId) : waiting.masterName();
+                send(player, "<red>Only " + owner + " can disown you.");
                 return;
             }
-            release(asPet, true);
+            if (asPet != null) {
+                release(asPet, true);
+            } else {
+                dormant.remove(me);
+                saveData();
+                send(player, "<green>You're free.");
+            }
             return;
         }
+
+        // Staff can free anyone by name
         if (args.length >= 1 && player.hasPermission("playerleash.admin")) {
-            Player t = Bukkit.getPlayerExact(args[0]);
-            Pet ap = t == null ? null : pets.get(t.getUniqueId());
-            if (ap != null) {
-                release(ap, true);
-                send(player, "<gray>Freed " + t.getName() + ".");
+            if (freeByName(args[0], null) != 0) {
+                send(player, "<gray>Freed " + args[0] + ".");
                 return;
             }
         }
-        List<Pet> mine = petsOf(player.getUniqueId());
-        if (mine.isEmpty()) {
+
+        // Owners free their own pets
+        List<Pet> mine = petsOf(me);
+        List<Bond> waitingMine = dormantOf(me);
+        if (mine.isEmpty() && waitingMine.isEmpty()) {
             send(player, "<red>You have no pets.");
             return;
         }
         if (args.length == 0) {
             for (Pet p : mine) release(p, true);
+            for (Bond b : waitingMine) {
+                dormant.remove(b.petId());
+                send(player, "<gray>" + b.petName() + " is no longer your pet.");
+            }
+            saveData();
             return;
         }
-        Player target = Bukkit.getPlayerExact(args[0]);
-        Pet p = target == null ? null : pets.get(target.getUniqueId());
-        if (p == null || !p.masterId.equals(player.getUniqueId())) {
-            send(player, "<red>That player isn't your pet.");
-            return;
-        }
-        release(p, true);
+        int result = freeByName(args[0], me);
+        if (result == 0) send(player, "<red>That player isn't your pet.");
+        else if (result == 2) send(player, "<gray>" + args[0] + " is no longer your pet.");
     }
 
     // ------------------------------------------------------- leash lifecycle
@@ -244,15 +275,15 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
 
     private void startLeash(Player master, Player target) {
         if (!master.isOnline() || !target.isOnline()) return;
-        if (pets.containsKey(master.getUniqueId())) {
+        if (isPet(master.getUniqueId())) {
             send(master, "<red>You're on a leash yourself.");
             return;
         }
-        if (pets.containsKey(target.getUniqueId()) || !petsOf(target.getUniqueId()).isEmpty()) {
+        if (isPet(target.getUniqueId()) || isOwner(target.getUniqueId())) {
             send(master, "<red>That player is already part of a leash.");
             return;
         }
-        if (petsOf(master.getUniqueId()).size() >= maxPets) {
+        if (ownedCount(master.getUniqueId()) >= maxPets) {
             send(master, "<red>You already have the maximum number of pets.");
             return;
         }
@@ -279,6 +310,7 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         anchorIndex.put(pet.anchor.getUniqueId(), target.getUniqueId());
         pet.dressStyle = defaultDressStyle;
         if (dressByDefault) pet.dress = new Dress(pet.dressStyle);
+        saveData();
         giveRemote(master);
         send(master, "<green>" + target.getName() + " is now on your leash. Use the compass (Pet Controller) to command them.");
         send(target, allowSelfRelease
@@ -286,8 +318,8 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
                 : "<yellow>You're on " + master.getName() + "'s leash. Only they can disown you.");
     }
 
-    private void release(Pet p, boolean notify) {
-        pets.remove(p.petId);
+    /** Takes the pet apart (rope, cage, dress, flight lock) without touching the saved records. */
+    private void teardown(Pet p) {
         p.leashed = false;
         removeAnchor(p);
         if (p.cage != null) {
@@ -301,6 +333,18 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         LeashHitch h = p.hitch;
         p.hitch = null;
         cleanupHitch(h);
+        if (p.flightBlocked) {
+            p.flightBlocked = false;
+            Player pl = Bukkit.getPlayer(p.petId);
+            if (pl != null) pl.setAllowFlight(p.hadFlight);
+        }
+    }
+
+    /** Frees the pet for good. */
+    private void release(Pet p, boolean notify) {
+        pets.remove(p.petId);
+        dormant.remove(p.petId);
+        teardown(p);
 
         Player master = Bukkit.getPlayer(p.masterId);
         Player pet = Bukkit.getPlayer(p.petId);
@@ -311,6 +355,20 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         if (master != null && petsOf(p.masterId).isEmpty()) {
             removeRemotes(master);
         }
+        saveData();
+    }
+
+    /** One of the two players went offline: take the leash apart but remember the pet. */
+    private void suspend(Pet p) {
+        Bond bond = snapshot(p);
+        pets.remove(p.petId);
+        teardown(p);
+        dormant.put(p.petId, bond);
+        Player master = Bukkit.getPlayer(p.masterId);
+        if (master != null && petsOf(p.masterId).isEmpty()) {
+            removeRemotes(master);
+        }
+        saveData();
     }
 
     private Chicken spawnAnchor(Location loc) {
@@ -411,16 +469,36 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
     private void tick() {
         long now = System.currentTimeMillis();
         requests.values().removeIf(r -> r.expiresAt() < now);
+        tickCount++;
 
         for (Pet p : new ArrayList<>(pets.values())) {
             Player pet = Bukkit.getPlayer(p.petId);
             Player master = Bukkit.getPlayer(p.masterId);
             if (pet == null || master == null) {
-                release(p, false);
+                suspend(p);
                 continue;
             }
 
+            if (tickCount % 10 == 0) refreshInventoryView(p, master, pet);
             if (p.dress != null) p.dress.update(pet);
+
+            // No flying while on the leash (creative flight, /fly, elytra).
+            boolean noFly = blockFlying && p.leashed
+                    && pet.getGameMode() != GameMode.CREATIVE && pet.getGameMode() != GameMode.SPECTATOR;
+            if (noFly) {
+                if (!p.flightBlocked) {
+                    p.flightBlocked = true;
+                    p.hadFlight = pet.getAllowFlight();
+                }
+                if (pet.getAllowFlight() || pet.isFlying()) {
+                    pet.setFlying(false);
+                    pet.setAllowFlight(false);
+                }
+                if (pet.isGliding()) pet.setGliding(false);
+            } else if (p.flightBlocked) {
+                p.flightBlocked = false;
+                pet.setAllowFlight(p.hadFlight);
+            }
 
             // Caged: pull them back to the middle if they somehow get outside.
             if (p.cage != null && !p.cage.inside(pet.getLocation())) {
@@ -450,13 +528,19 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
                 continue;
             }
             if (!p.sitting && !pet.isInsideVehicle() && dist > pullStart) {
+                // Pull sideways only. Up and down is left to gravity, so a pet can never be dragged into the air.
                 Vector dir = target.toVector().subtract(pet.getLocation().toVector());
-                double speed = Math.min(maxPullSpeed, 0.1 + (dist - pullStart) * 0.12);
-                double dy = dir.getY();
-                Vector v = dir.clone().normalize().multiply(speed);
-                double up = dy > 0.5 ? Math.min(v.getY(), 0.42) : 0.0;
-                v.setY(Math.max(pet.getVelocity().getY(), up));
-                pet.setVelocity(v);
+                dir.setY(0);
+                double flat = dir.length();
+                if (flat > 0.01) {
+                    double speed = Math.min(maxPullSpeed, 0.1 + (dist - pullStart) * 0.12);
+                    Vector v = dir.multiply(speed / flat);
+                    double vy = pet.getVelocity().getY();
+                    // Hop up a step only from the ground, when the owner is clearly higher up.
+                    if (pet.isOnGround() && target.getY() - pet.getLocation().getY() > 0.6) vy = 0.42;
+                    v.setY(vy);
+                    pet.setVelocity(v);
+                }
             }
         }
     }
@@ -615,10 +699,15 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
         Location from = e.getFrom();
         Location to = e.getTo();
         if (to == null) return;
-        if (from.getX() != to.getX() || from.getY() != to.getY() || from.getZ() != to.getZ()) {
-            Location stay = from.clone();
-            stay.setYaw(to.getYaw());
-            stay.setPitch(to.getPitch());
+        boolean slid = from.getX() != to.getX() || from.getZ() != to.getZ();
+        boolean jumped = to.getY() > from.getY();
+        if (slid || jumped) {
+            // Hold them in place sideways and stop jumping, but let gravity still work
+            // (freezing the height made pets hover in the air).
+            Location stay = to.clone();
+            stay.setX(from.getX());
+            stay.setZ(from.getZ());
+            if (jumped) stay.setY(from.getY());
             e.setTo(stay);
         }
     }
@@ -627,14 +716,158 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
     public void onQuit(PlayerQuitEvent e) {
         UUID id = e.getPlayer().getUniqueId();
         requests.remove(id);
+        // They stay owned: the leash is taken apart now and put back when both are online again.
         Pet asPet = pets.get(id);
-        if (asPet != null) release(asPet, true);
-        for (Pet p : petsOf(id)) release(p, true);
+        if (asPet != null) suspend(asPet);
+        for (Pet p : petsOf(id)) suspend(p);
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent e) {
+        Player joined = e.getPlayer();
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (joined.isOnline()) tryActivate(joined);
+        }, 20L);
     }
 
     @EventHandler
     public void onDrop(PlayerDropItemEvent e) {
         if (isRemote(e.getItemDrop().getItemStack())) e.setCancelled(true);
+    }
+
+    // ------------------------------------------------------------- saved pets
+
+    private boolean isPet(UUID id) {
+        return pets.containsKey(id) || dormant.containsKey(id);
+    }
+
+    private boolean isOwner(UUID id) {
+        return !petsOf(id).isEmpty() || !dormantOf(id).isEmpty();
+    }
+
+    private int ownedCount(UUID masterId) {
+        return petsOf(masterId).size() + dormantOf(masterId).size();
+    }
+
+    private List<Bond> dormantOf(UUID masterId) {
+        List<Bond> list = new ArrayList<>();
+        for (Bond b : dormant.values()) if (b.masterId().equals(masterId)) list.add(b);
+        return list;
+    }
+
+    private String nameOf(UUID id) {
+        Player online = Bukkit.getPlayer(id);
+        if (online != null) return online.getName();
+        String name = Bukkit.getOfflinePlayer(id).getName();
+        return name != null ? name : "unknown";
+    }
+
+    private Bond snapshot(Pet p) {
+        boolean leashed = p.cage != null ? p.wasLeashed : p.leashed;
+        return new Bond(p.masterId, p.petId, nameOf(p.petId), nameOf(p.masterId),
+                leashed, p.freeWill, p.dress != null, p.dressStyle);
+    }
+
+    private void loadData() {
+        dataFile = new File(getDataFolder(), "pets.yml");
+        dormant.clear();
+        if (!dataFile.exists()) return;
+        YamlConfiguration cfg = YamlConfiguration.loadConfiguration(dataFile);
+        ConfigurationSection sec = cfg.getConfigurationSection("bonds");
+        if (sec == null) return;
+        for (String key : sec.getKeys(false)) {
+            try {
+                ConfigurationSection b = sec.getConfigurationSection(key);
+                if (b == null) continue;
+                UUID petId = UUID.fromString(key);
+                UUID masterId = UUID.fromString(b.getString("master", ""));
+                dormant.put(petId, new Bond(masterId, petId,
+                        b.getString("pet-name", "unknown"), b.getString("master-name", "unknown"),
+                        b.getBoolean("leashed", true), b.getBoolean("free-will", false),
+                        b.getBoolean("dress", false), b.getInt("dress-style", 0)));
+            } catch (IllegalArgumentException ex) {
+                getLogger().warning("Skipping a bad entry in pets.yml: " + key);
+            }
+        }
+    }
+
+    private void saveData() {
+        if (dataFile == null) return;
+        YamlConfiguration cfg = new YamlConfiguration();
+        for (Pet p : pets.values()) writeBond(cfg, snapshot(p));
+        for (Bond b : dormant.values()) writeBond(cfg, b);
+        try {
+            getDataFolder().mkdirs();
+            cfg.save(dataFile);
+        } catch (IOException ex) {
+            getLogger().warning("Couldn't save pets.yml: " + ex.getMessage());
+        }
+    }
+
+    private void writeBond(YamlConfiguration cfg, Bond b) {
+        String base = "bonds." + b.petId() + ".";
+        cfg.set(base + "master", b.masterId().toString());
+        cfg.set(base + "pet-name", b.petName());
+        cfg.set(base + "master-name", b.masterName());
+        cfg.set(base + "leashed", b.leashed());
+        cfg.set(base + "free-will", b.freeWill());
+        cfg.set(base + "dress", b.dress());
+        cfg.set(base + "dress-style", b.dressStyle());
+    }
+
+    /** When a saved pet and their owner are both online, put the leash back on. */
+    private void tryActivate(Player joined) {
+        for (Bond b : new ArrayList<>(dormant.values())) {
+            if (!b.masterId().equals(joined.getUniqueId()) && !b.petId().equals(joined.getUniqueId())) continue;
+            Player master = Bukkit.getPlayer(b.masterId());
+            Player pet = Bukkit.getPlayer(b.petId());
+            if (master == null || pet == null) continue;
+            activate(b, master, pet);
+        }
+    }
+
+    private void activate(Bond b, Player master, Player target) {
+        dormant.remove(b.petId());
+        if (pets.containsKey(b.petId())) return;
+        Pet pet = new Pet(b.masterId(), b.petId());
+        pet.dressStyle = Math.max(0, Math.min(b.dressStyle(), DressStyles.STYLES.length - 1));
+        pet.freeWill = b.freeWill();
+        pet.leashed = b.leashed() && !b.freeWill();
+        pets.put(b.petId(), pet);
+        if (b.dress()) pet.dress = new Dress(pet.dressStyle);
+        if (pet.leashed) relink(pet);
+        giveRemote(master);
+        send(master, "<green>" + target.getName() + " is on your leash again.");
+        send(target, "<yellow>You're back on " + master.getName() + "'s leash.");
+        saveData();
+    }
+
+    /** 0 = nobody found, 1 = freed a pet who is online, 2 = freed a saved pet who was waiting. */
+    private int freeByName(String name, UUID ownerOnly) {
+        for (Pet p : new ArrayList<>(pets.values())) {
+            if (!nameOf(p.petId).equalsIgnoreCase(name)) continue;
+            if (ownerOnly != null && !p.masterId.equals(ownerOnly)) continue;
+            release(p, true);
+            return 1;
+        }
+        for (Bond b : new ArrayList<>(dormant.values())) {
+            if (!b.petName().equalsIgnoreCase(name)) continue;
+            if (ownerOnly != null && !b.masterId().equals(ownerOnly)) continue;
+            dormant.remove(b.petId());
+            saveData();
+            Player pet = Bukkit.getPlayer(b.petId());
+            if (pet != null) send(pet, "<green>You're free.");
+            return 2;
+        }
+        return 0;
+    }
+
+    /** Keeps an open "view inventory" screen up to date. */
+    private void refreshInventoryView(Pet p, Player master, Player pet) {
+        Inventory top = master.getOpenInventory().getTopInventory();
+        if (top.getHolder(false) instanceof PetInvView v && v.petId.equals(p.petId)) {
+            v.refresh(pet);
+        }
     }
 
     // ------------------------------------------------------------------- cage
@@ -733,12 +966,17 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
 
     @EventHandler
     public void onDrag(InventoryDragEvent e) {
-        if (e.getView().getTopInventory().getHolder() instanceof PetMenu) e.setCancelled(true);
+        Object holder = e.getView().getTopInventory().getHolder();
+        if (holder instanceof PetMenu || holder instanceof PetInvView) e.setCancelled(true);
     }
 
     @EventHandler
     public void onClick(InventoryClickEvent e) {
         Inventory top = e.getView().getTopInventory();
+        if (top.getHolder() instanceof PetInvView) {
+            e.setCancelled(true);
+            return;
+        }
         if (!(top.getHolder() instanceof PetMenu menu)) return;
         e.setCancelled(true);
         if (!(e.getWhoClicked() instanceof Player master)) return;
@@ -815,6 +1053,9 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
                 }
                 openControl(master, p);
             }
+            case PetMenu.SLOT_INVENTORY -> {
+                master.openInventory(new PetInvView(master, pet).getInventory());
+            }
             case PetMenu.SLOT_FREEWILL -> {
                 setFreeWill(p, !p.freeWill);
                 send(master, p.freeWill ? "<green>" + pet.getName() + " has free will. You still own them."
@@ -829,5 +1070,6 @@ public final class PlayerLeashPlugin extends JavaPlugin implements Listener {
             }
             default -> { }
         }
+        saveData();
     }
 }

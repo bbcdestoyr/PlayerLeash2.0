@@ -28,6 +28,7 @@ final class PetMenu implements InventoryHolder {
     static final int SLOT_CAGE = 14;
     static final int SLOT_FREEWILL = 15;
     static final int SLOT_DRESS = 16;
+    static final int SLOT_INVENTORY = 20;
     static final int SLOT_RELEASE = 22;
 
     final Kind kind;
@@ -98,11 +99,11 @@ final class PetMenu implements InventoryHolder {
         }
 
         if (data.cage != null) {
-            inv.setItem(SLOT_CAGE, item(Material.IRON_BARS, "Cage: ON", NamedTextColor.GREEN,
+            inv.setItem(SLOT_CAGE, item(Material.GLASS, "Cage: ON", NamedTextColor.GREEN,
                     "They are locked in.", "Click to open the cage."));
         } else {
-            inv.setItem(SLOT_CAGE, item(Material.IRON_BARS, "Cage: OFF", NamedTextColor.GRAY,
-                    "Locks them in a 3x3 cage.", "They can still use commands.",
+            inv.setItem(SLOT_CAGE, item(Material.GLASS, "Cage: OFF", NamedTextColor.GRAY,
+                    "Locks them in a 3x3 glass cage.", "They can still use commands.",
                     "They can't break out or teleport out."));
         }
         String styleName = DressStyles.NAMES[data.dressStyle];
@@ -113,6 +114,9 @@ final class PetMenu implements InventoryHolder {
             inv.setItem(SLOT_DRESS, item(Material.PINK_DYE, "Maid dress: OFF", NamedTextColor.GRAY,
                     "Click to put it on.", "Right-click to change the style.", "Style: " + styleName));
         }
+
+        inv.setItem(SLOT_INVENTORY, item(Material.CHEST, "View inventory", NamedTextColor.AQUA,
+                "See what they are carrying.", "View only: you can't take or add items."));
 
         inv.setItem(SLOT_RELEASE, item(Material.BARRIER, "Disown", NamedTextColor.DARK_RED,
                 "Frees them. They are no longer yours."));

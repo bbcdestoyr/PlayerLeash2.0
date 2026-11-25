@@ -37,6 +37,12 @@ final class Pet {
     /** True while the pet may do anything. They are still owned. */
     boolean freeWill;
 
+    /** True while we are holding the pet's flight ability off (they are on the leash). */
+    boolean flightBlocked;
+
+    /** Whether the pet could fly before we switched it off, so we can give it back. */
+    boolean hadFlight;
+
     Pet(UUID masterId, UUID petId) {
         this.masterId = masterId;
         this.petId = petId;

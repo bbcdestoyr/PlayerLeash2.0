@@ -21,5 +21,8 @@ The finished plugin is `target/PlayerLeash-1.0.0.jar`. Drop it in your server's
 - Only the owner can free a pet: Disown in the menu, or `/unleash [player]`. Staff with `playerleash.admin` can free anyone. Set `pet-can-unleash-self: true` in `config.yml` to let pets free themselves.
 - `/playerleash reload` reloads `config.yml`.
 
-- Cage (menu): locks a pet in a 3x3 bar cage. They can still use commands but can't break out, break blocks or teleport out. The cage opens with the same button, when you Disown them, or when either of you leaves. If the server crashes while a cage is up, the bars stay and you remove them by hand.
-- Maid dress (menu): click the pink dye to put it on or take it off, right-click to change style (Classic, Baby pink, Long gown, Candy). Pick the default in `config.yml` with `dress-style`.
+- Cage (menu): locks a pet in a 3x3 glass cage. They can still use commands but can't break out, break blocks or teleport out. The cage opens with the same button, when you Disown them, or when either of you leaves. If the server crashes while a cage is up, the glass stays and you remove it by hand.
+- Maid dress (menu): click the pink dye to put it on or take it off, right-click to change colour (Black & white, Baby pink, Lavender, Mint, Sky blue, Navy, Red, Pale lilac). Pick the default in `config.yml` with `dress-style`. If it looks wrong, try `dress-follow: teleport` or adjust `dress-height-adjust`.
+- View inventory (menu): shows what a pet is carrying. View only.
+- Pets stay owned when either of you leaves: the leash goes back on when you are both online again. Disown (or `/unleash <name>`) works even while they are offline.
+- Leashed pets can't fly (`block-flying-while-leashed`).

@@ -25,8 +25,19 @@ anchor-height-offset: 1.1
 # Staff with playerleash.admin can always free anyone with /unleash <player>.
 pet-can-unleash-self: false
 
-# Maid dress. Style for new pets: 1 Classic, 2 Baby pink, 3 Long gown, 4 Candy.
-# The owner can switch style any time by right-clicking the dress button in the menu.
+# Maid dress colour for new pets:
+#   1 Black & white, 2 Baby pink, 3 Lavender, 4 Mint, 5 Sky blue, 6 Navy, 7 Red, 8 Pale lilac
+# The owner can switch colour any time by right-clicking the dress button in the menu.
 dress-style: 1
 # true = pets start out wearing the dress. false = the owner turns it on in the menu.
 dress-on-by-default: false
+
+# How the dress sticks to the player.
+#   passenger = the dress rides the player (smoothest)
+#   teleport  = the dress is moved to the player every tick (use this if the dress floats or sits in the wrong place)
+dress-follow: passenger
+# Passenger mode only: nudge the dress up (positive) or down (negative), in blocks, if it sits too high or low.
+dress-height-adjust: 0.0
+
+# Leashed pets can't fly (creative flight, /fly, elytra). They get it back when the leash comes off.
+block-flying-while-leashed: true
